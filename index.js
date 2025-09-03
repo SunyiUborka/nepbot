@@ -2,6 +2,7 @@ import axios from 'axios';
 import tough from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
 import fs from 'fs';
+import { randomInt } from 'crypto';
 import * as dotenv from 'dotenv';
 dotenv.config()
 
@@ -24,7 +25,6 @@ const loadData = () =>{
     previousCourses = JSON.parse(file);
   }
 }
-
 loadData();
 
 const parseCookiesToObject = (cookiesArray)=> {
@@ -88,6 +88,9 @@ const sendMessage = async (content) => {
 }
 
 const checkCourses = async () => {
+  const now = new Date();
+  console.log('Checked at ', now.toLocaleString());
+  
   const currentCourses = (await getCourses()).data.filter(x => x.isSigned == false)
   if(previousCourses.length == 0) {
     saveData(currentCourses)
@@ -103,6 +106,10 @@ const checkCourses = async () => {
     })
     saveData(currentCourses)
     loadData();
+    const baseCheck = 5; // in minutes
+    const nextCheck = (baseCheck * 60 * 1000) + randomInt(0, 300000);
+    console.log(`Next check in ${Math.round(nextCheck / 1000)} seconds | ${new Date(Date.now() + nextCheck).toLocaleString()}`);
+    setTimeout(checkCourses, nextCheck);
   }
 }
 
