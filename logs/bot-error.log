@@ -1,0 +1,5 @@
+2025-09-04 15:16:19 [[31merror[39m]: Error during authentication: $process is not defined
+2025-09-04 15:16:19 [[31merror[39m]: Error during fetching courses: Cannot read properties of undefined (reading 'cookies')
+2025-09-04 15:16:19 [[31merror[39m]: Error during checking courses: Cannot read properties of undefined (reading 'data')
+2025-09-04 15:18:07 [[31merror[39m]: Error during fetching courses: client is not defined
+2025-09-04 15:18:07 [[31merror[39m]: Error during checking courses: Cannot read properties of undefined (reading 'data')
