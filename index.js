@@ -7,24 +7,24 @@ import logger from './logger.js';
 import * as dotenv from 'dotenv';
 dotenv.config()
 
-const USER_AGENT = 
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-    'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-    'Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0'
-    
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+  'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+  'Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0'
+
 const cookieJar = new tough.CookieJar();
 
-if(process.env.SERVER_COOKIE)
+if (process.env.SERVER_COOKIE)
   cookieJar.setCookie(
-    process.env.SERVER_COOKIE, 
+    process.env.SERVER_COOKIE,
     process.env.BASE_URL
-);
+  );
 
 const client = wrapper(
   axios.create({
-    jar: cookieJar, 
-    withCredentials: true, 
-    headers: { 
+    jar: cookieJar,
+    withCredentials: true,
+    headers: {
       'User-Agent': USER_AGENT
     }
   })
@@ -32,25 +32,25 @@ const client = wrapper(
 
 let previousCourses = Array()
 
-const saveData = (data) =>{
+const saveData = (data) => {
   fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
 }
 
-const loadData = () =>{
-  if(fs.existsSync('data.json')){
+const loadData = () => {
+  if (fs.existsSync('data.json')) {
     const file = fs.readFileSync('data.json', 'utf-8');
-    if(!file) return;
+    if (!file) return;
     previousCourses = JSON.parse(file);
   }
 }
 loadData();
 
-const parseCookiesToObject = (cookiesArray)=> {
+const parseCookiesToObject = (cookiesArray) => {
   const cookieMap = {};
 
   for (const cookieHeader of cookiesArray) {
     const cookieStr = String(cookieHeader);
-    
+
     let clean = cookieStr;
     if (cookieStr.startsWith('Cookie="'))
       clean = cookieStr.replace(/^Cookie="/, '').replace(/"$/, '');
@@ -69,16 +69,16 @@ const parseCookiesToObject = (cookiesArray)=> {
 const fetchWithCookies = async (url) => {
   try {
     const response = await client.post(url, {
-        username: process.env.CODE,
-        password: process.env.PASSWORD
+      username: process.env.CODE,
+      password: process.env.PASSWORD
     });
-    
+
     const cookies = parseCookiesToObject(await cookieJar.getCookies(url));
     const { data } = response.data
-    
+
     return {
-        data,
-        cookies: cookies
+      data,
+      cookies: cookies
     };
   } catch (e) {
     logger.error(`Error during authentication: ${e.message}`);
@@ -89,24 +89,32 @@ const getCourses = async () => {
   try {
     const data = await fetchWithCookies(`${process.env.BASE_URL}/hallgato/api/Account/Authenticate`)
     const cookieHeader = Object.entries(data.cookies).map(([key, value]) => `${key}=${value}`).join('; ');
-    
-    return (await client.get(`${process.env.BASE_URL}/hallgato/api/SubjectApplication/GetScheduledCourses?model.termId=70632`,{
-        headers: {
-          Authorization: `Bearer ${data.data.accessToken}`,
-          Cookie: cookieHeader
-        }
+
+    return (await client.get(`${process.env.BASE_URL}/hallgato/api/SubjectApplication/GetScheduledCourses?model.termId=70632`, {
+      headers: {
+        Authorization: `Bearer ${data.data.accessToken}`,
+        Cookie: cookieHeader
+      }
     })).data
   } catch (e) {
     logger.error(`Error during fetching courses: ${e.message}`);
   }
-  
+
 }
 
 const sendMessage = async (content) => {
-  try {
-    const url = 'https://discord.com/api'
+  const url = 'https://discord.com/api'
 
-    axios.post(`${url}/channels/${process.env.DC_CHANNEL_ID}/messages`, {
+  const channelId = (await axios.post("https://discord.com/api/v10/users/@me/channels", {
+    recipient_id: process.env.DC_USER_ID
+  }, {
+    headers: {
+      Authorization: `Bot ${process.env.DC_BOT_TOKEN}`,
+    }
+  })).data.id
+
+  try {
+    axios.post(`${url}/channels/${channelId}/messages`, {
       content: content
     }, {
       headers: {
@@ -116,40 +124,44 @@ const sendMessage = async (content) => {
   } catch (e) {
     logger.error(`Error during sending message: ${e.message}`);
   }
-  
+
 }
 
 const checkCourses = async () => {
   const now = new Date();
   logger.info('Checking courses... ');
-  
+
   try {
     const currentCourses = (await getCourses()).data.filter(x => x.isSigned == false)
-  if(previousCourses.length == 0) {
-    saveData(currentCourses)
-  }else{
-    currentCourses.forEach(x => {
-      const found = previousCourses.find(c => c.code == x.code);
-      const { startTime, endTime } = x.classInstanceInfos[0];
+    if (previousCourses.length == 0) {
+      saveData(currentCourses)
+    } else {
+      currentCourses.forEach(x => {
+        const found = previousCourses.find(c => c.code == x.code);
+        const { startTime, endTime } = x.classInstanceInfos[0];
 
-      if(x.registeredStudentsCount != found.registeredStudentsCount)
-        sendMessage(`A ${startTime}-${endTime} idejű ${x.title} kurzús létszáma változott: ${found.registeredStudentsCount} -> ${x.registeredStudentsCount}`);
-      if(x.maxLimit != found.maxLimit)
-        sendMessage(`A ${startTime}-${endTime} idejű ${x.title} kurzús maximális létszáma változott: ${found.maxLimit} -> ${x.maxLimit}`);
-    })
-    saveData(currentCourses)
-    loadData();
-    const baseCheck = 5; // in minutes
-    const nextCheck = (baseCheck * 60 * 1000) + randomInt(0, 300000);
-    logger.info(`Next check in ${Math.round(nextCheck / 1000)} seconds | ${new Date(Date.now() + nextCheck).toLocaleString()}`);
-    setTimeout(checkCourses, nextCheck);
-  }
+        if (!found)
+          return
+
+        if (x.registeredStudentsCount != found.registeredStudentsCount)
+          sendMessage(`A ${startTime}-${endTime} idejű ${x.title} kurzús létszáma változott: ${found.registeredStudentsCount} -> ${x.registeredStudentsCount}`);
+        if (x.maxLimit != found.maxLimit)
+          sendMessage(`A ${startTime}-${endTime} idejű ${x.title} kurzús maximális létszáma változott: ${found.maxLimit} -> ${x.maxLimit}`);
+      })
+      saveData(currentCourses)
+      loadData();
+      const baseCheck = 5; // in minutes
+      const nextCheck = (baseCheck * 60 * 1000) + randomInt(0, 300000);
+      logger.info(`Next check in ${Math.round(nextCheck / 1000)} seconds | ${new Date(Date.now() + nextCheck).toLocaleString()}`);
+      setTimeout(checkCourses, nextCheck);
+    }
   }
   catch (e) {
     logger.error(`Error during checking courses: ${e.message}`);
   }
 }
 try {
+  sendMessage("NepBot started!");
   checkCourses();
 } catch (e) {
   logger.error(`Error during initial setup: ${e.message}`);
