@@ -59,7 +59,18 @@ const login = async () => {
   }
 }
 
+const refreshToken = async () => {
+  try {
+    logger.info('Updating token...')
+    const r = await client.post(`${process.env.BASE_URL}/hallgato/api/Account/GetNewTokens`);
+    client.defaults.headers.common['Authorization'] = `Bearer ${r.data.accessToken}`
+  } catch (e) {
+    logger.error(`Error during token update: ${e.message}`)
+  }
+}
+
 const getCourses = async () => {
+  refreshToken()
 	logger.info(`Fetching courses...`)
   try {
     const schedules = (await client.get(`${process.env.BASE_URL}/hallgato/api/SubjectApplication/GetScheduledCourses?request.termId=70633`))
