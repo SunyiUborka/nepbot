@@ -49,13 +49,15 @@ const login = async () => {
       username: process.env.CODE,
       password: process.env.PASSWORD
     });
-      client.defaults.headers.common['Authorization'] = `Bearer ${r.data.data.accessToken}`
-      if (r.status == 200) {
-          logger.info(`Authentication success`)
-          logged = true
-      }else logger.error(`Error during Authentication: ${r.statusText}`)
+    client.defaults.headers.common['Authorization'] = `Bearer ${r.data.data.accessToken}`
+    if (r.status == 200) {
+      logger.info(`Authentication success`)
+      logged = true
+    } else logger.error(`Error during Authentication: ${r.statusText}`)
   } catch (e) {
     logger.error(`Error during authentication: ${e.message}`);
+    sendMessage(`Error during authentication: ${e.message}`)
+    await login()
   }
 }
 
@@ -65,26 +67,29 @@ const refreshToken = async () => {
     const r = await client.post(`${process.env.BASE_URL}/hallgato/api/Account/GetNewTokens`);
     client.defaults.headers.common['Authorization'] = `Bearer ${r.data.accessToken}`
   } catch (e) {
+    await login()
     logger.error(`Error during token update: ${e.message}`)
+    sendMessage(`Error during token update: ${e.message}`)
   }
 }
 
 const getCourses = async () => {
-  refreshToken()
-	logger.info(`Fetching courses...`)
+  await refreshToken()
+  logger.info(`Fetching courses...`)
   try {
-    const schedules = (await client.get(`${process.env.BASE_URL}/hallgato/api/SubjectApplication/GetScheduledCourses?request.termId=70633`))
-        .data
-    logger.info(`Found ${schedules.length} courses`)
-    return schedules
+    const r = await client.get(`${process.env.BASE_URL}/hallgato/api/SubjectApplication/GetScheduledCourses?request.termId=70633`)
+    logger.info(`Found ${r.data.data.length} courses`)
+    return r.data
   } catch (e) {
-    console.log(e)
     logger.error(`Error during fetching courses: ${e.message}`);
+    sendMessage(`Error during fetching courses: ${e.message}`)
   }
 }
 
-const sendMessage = async (content) => {
-  const dcClient = wrapper(
+const dcUrl = `https://discord.com/api`
+  
+const getDcClient = async () => {
+  return wrapper(
     axios.create({
         withCredentials: true,
         headers: {
@@ -92,21 +97,33 @@ const sendMessage = async (content) => {
         }
     })
   );
-  const url = 'https://discord.com/api'
-  const channelId = await (await dcClient.post("https://discord.com/api/v10/users/@me/channels", {
-    recipient_id: process.env.DC_USER_ID
-  })).data.id
-
-  try {
-    await dcClient.post(`${url}/channels/${channelId}/messages`, {
-      content: content
-    })
-  } catch (e) {
-    console.log(e)
-    logger.error(`Error during sending message: ${e.message}`);
-  }
 }
 
+const getDcUserId = async () => {
+  try {
+    const dcClient = await getDcClient()
+    return (await dcClient.post(`${dcUrl}/v10/users/@me/channels`, {
+      recipient_id: process.env.DC_USER_ID
+    })).data.id
+  } catch (e) {
+    logger.info(`Error during geting user Id: ${e}`)
+  }
+}
+const userId = await getDcUserId()
+
+const sendMessage = async (content) => {
+  const dcClient = await getDcClient()
+  if (userId != undefined) {
+    try {
+      await dcClient.post(`${dcUrl}/channels/${userId}/messages`, {
+        content: content
+      })
+    } catch (e) {
+      console.log(e)
+      logger.error(`Error during sending message: ${e.message}`);
+    }
+  }else logger.error(`Error during sending message: userId is undefined`)
+}
 
 const checkCourses = async () => {
   logger.info('Checking courses... ');
@@ -130,22 +147,22 @@ const checkCourses = async () => {
       })
       saveData(currentCourses)
       loadData();
-      const baseCheck = 5; // in minutes
+    }
+  } catch (e) {
+      logger.error(`Error during checking courses: ${e.message}`);
+    } finally {
+      const baseCheck = 10; // in minutes
       const nextCheck = (baseCheck * 60 * 1000) + randomInt(0, 300000);
       logger.info(`Next check in ${Math.round(nextCheck / 1000)} seconds | ${new Date(Date.now() + nextCheck).toLocaleString()}`);
       setTimeout(checkCourses, nextCheck);
     }
-  }
-  catch (e) {
-    logger.error(`Error during checking courses: ${e.message}`);
-  }
 }
 
 (async () => {
   try {
     await sendMessage("NepBot started!");
-      await login()
-      if (logged) checkCourses();
+    await login()
+    if (logged) checkCourses();
   } catch (e) {
     logger.error(`Error during initial setup: ${e.message}`);
   }
